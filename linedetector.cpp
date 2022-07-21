@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <queue>
 #include <string>
+#include <float.h>
 
 #include "linedetector.hh"
 
@@ -25,7 +26,7 @@ using namespace std;
 
 const string output_path = "output/";
 const string image_path = "../image/color/images-2014-12-22-12-35-10_mapping_280S_ramps/";
-const double scale = 0.35;
+const double scale = 0.25;
 const double line_distance_threshold = 20;
 const vector<Scalar> lane_colors = {Scalar(0, 0, 255), Scalar(0, 255, 0), Scalar(255, 0, 0), Scalar(255, 255, 0)}; // red, green, blue, yellow
 
@@ -46,12 +47,12 @@ int main(int argc, char **argv)
         for (int i = 0; i < image_names.size(); i++)
         {
             cout << image_names[i] << endl;
-            process_image(image_names[i]);
+            process_image(image_names[i], 1);
         }
     }
     else
     {
-        process_image(args.image_name);
+        process_image(args.image_name, 0);
     }
     return 0;
 }
@@ -81,7 +82,7 @@ vector<string> get_all_images_in_dir()
     return image_names;
 }
 
-void process_image(string image_name)
+void process_image(string image_name, int waitKeyTimer)
 {
     Mat image = imread(image_path + image_name + "_color_rect.png");
 
@@ -112,7 +113,7 @@ void process_image(string image_name)
     draw_lanes_on_image(image, lane_lines);
 
     imshow("Image with lines", image);
-    waitKey(0);
+    waitKey(waitKeyTimer);
 }
 
 bool parse_args(int argc, char **argv)
@@ -264,7 +265,7 @@ Mat clean_ipm_from_noise(Mat ipm)
 
     // Remove noise
     Mat ipm_noise(ipm.rows, ipm.cols, CV_8UC1, Scalar(0));
-    Mat element = getStructuringElement(MORPH_ELLIPSE, Size(10, 10));
+    Mat element = getStructuringElement(MORPH_RECT, Size(14, 14));
     // To close the gap of the noise around the road
     morphologyEx(ipm, ipm_noise, MORPH_CLOSE, element);
 
@@ -282,7 +283,7 @@ Mat clean_ipm_from_noise(Mat ipm)
 #endif
 
     // Expaned the noise
-    element = getStructuringElement(MORPH_ELLIPSE, Size(30, 30));
+    element = getStructuringElement(MORPH_RECT, Size(30, 30));
     dilate(ipm_noise, ipm_noise, element);
 
 #if DEBUG
@@ -374,7 +375,11 @@ vector<vector<double>> get_four_lanes(vector<Vec4i> lines, int x_scale, int y_sc
             }
         }
 
-        double slope = (end.y - start.y) / (end.x - start.x);
+        double slope = DBL_MAX;
+        if (end.x != start.x)
+        {
+            slope = (end.y - start.y) / (end.x - start.x);
+        }
         // If the slope is positive, then is a right lane
         if (slope < 0)
         {
@@ -404,7 +409,6 @@ vector<vector<double>> get_four_lanes(vector<Vec4i> lines, int x_scale, int y_sc
     imshow("Detected grouped lines", all_line_image);
     waitKey(0);
 #endif
-
     return filtered_lanes;
 }
 
@@ -419,7 +423,7 @@ bool areSameLane(const Vec4i &_l1, const Vec4i &_l2)
     double slope_l0 = (end_l0.y - start_l0.y) / (end_l0.x - start_l0.x);
     double slope_l1 = (end_l1.y - start_l1.y) / (end_l1.x - start_l1.x);
 
-    if (abs(end_l0.x - start_l0.x) < line_distance_threshold && abs(end_l1.x - start_l1.x) < line_distance_threshold)
+    if (abs(end_l0.x - end_l1.x) < line_distance_threshold && abs(start_l0.x - start_l1.x) < line_distance_threshold)
     {
         return true;
     }
@@ -534,7 +538,16 @@ vector<vector<double>> filter_lanes_by_slope(vector<lane_t> right_lanes, vector<
         // The r1 lane is the second last lane of the left lanes, if i=0, then we select the second last lane.
         // if i=1 we select the last lane.
 
-        int lane_index = right_lanes[right_lanes.size() - 2 + i].lane_index;
+        int lane_index;
+        if (right_lanes.size() >= 2)
+        {
+            lane_index = right_lanes[right_lanes.size() - 2 + i].lane_index;
+        }
+        else
+        {
+            // To solve the problem of having just one right lane
+            lane_index = right_lanes[right_lanes.size() - 1].lane_index;
+        }
         // Add right lane inside the third (r0) and fourth(r1) position
         filtered_lanes[3 - i] = all_lanes[lane_index];
 
