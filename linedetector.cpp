@@ -24,7 +24,7 @@ using namespace std;
 [0, 0, 1]]
 */
 
-const string output_path = "output/";
+const string output_path = "../output/";
 const string image_path = "../image/color/images-2014-12-22-12-35-10_mapping_280S_ramps/";
 const int ipm_width = 400;
 const int ipm_height = 1000;
@@ -45,12 +45,14 @@ int main(int argc, char **argv)
     parse_args(argc, argv);
     if (args.process_all_image)
     {
+        VideoWriter outputVideo;
+        outputVideo.open(output_path + "output.avi", -1, 30, Size(ipm_width, ipm_height), true);
         vector<string> image_names = get_all_images_in_dir();
 
         for (int i = 0; i < image_names.size(); i++)
         {
             cout << image_names[i] << endl;
-            process_image(image_names[i], 1);
+            process_image(image_names[i], 1, outputVideo);
         }
     }
     else
@@ -85,7 +87,7 @@ vector<string> get_all_images_in_dir()
     return image_names;
 }
 
-void process_image(string image_name, int waitKeyTimer)
+void process_image(string image_name, int waitKeyTimer, VideoWriter outputVideo)
 {
     Mat image = imread(image_path + image_name + "_color_rect.png");
     blur(image, image, Size(5, 5));
@@ -115,6 +117,11 @@ void process_image(string image_name, int waitKeyTimer)
     vector<Vec4i> lines = get_all_lines_in_the_image(img_ipm);
     vector<vector<double>> lane_lines = get_four_lanes(lines, img_ipm.cols / 2, img_ipm.rows);
     draw_lanes_on_image(image, lane_lines);
+
+    if (outputVideo.isOpened())
+    {
+        outputVideo.write(image);
+    }
 
     imshow("Image with lines", image);
     waitKey(waitKeyTimer);

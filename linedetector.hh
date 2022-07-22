@@ -24,7 +24,7 @@ typedef struct
 
 bool parse_args(int argc, char **argv);
 vector<string> get_all_images_in_dir();
-void process_image(string image_name, int waitKeyTimer);
+void process_image(string image_name, int waitKeyTimer, VideoWriter outputVideo = VideoWriter());
 Mat ipm(Mat image, int width, int height);
 void draw_lines_from_ipm(Mat image, Mat ipm_with_lines);
 Mat binarization(Mat im_color);
