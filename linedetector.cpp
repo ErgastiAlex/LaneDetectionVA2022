@@ -30,7 +30,7 @@ const int ipm_width = 400;
 const int ipm_height = 1000;
 const double scale = 0.25;
 const double line_distance_threshold = 20;
-const double slope_threshold = 0.1;
+const double angle_threshold = 87.0 / 180.0 * CV_PI;                                                               // Only vertical line
 const vector<Scalar> lane_colors = {Scalar(0, 0, 255), Scalar(0, 255, 0), Scalar(255, 0, 0), Scalar(255, 255, 0)}; // red, green, blue, yellow
 
 args_t args = {
@@ -88,6 +88,7 @@ vector<string> get_all_images_in_dir()
 void process_image(string image_name, int waitKeyTimer)
 {
     Mat image = imread(image_path + image_name + "_color_rect.png");
+    blur(image, image, Size(5, 5));
 
     if (image.empty())
     {
@@ -171,10 +172,13 @@ Mat binarization(Mat im_color)
     Mat im_bin(im_color.rows, im_color.cols, CV_8UC1, Scalar(0));
 
     bitwise_and(mag_binary, dir_binary, im_bin);
+    // bitwise_or(dir_binary, im_bin, im_bin);
     bitwise_or(im_bin, grad_x_bin, im_bin);
     bitwise_or(im_bin, s_binary, im_bin);
 #if DEBUG
     imshow("grad_x_bin", grad_x_bin);
+
+    imshow("dir_binary", dir_binary);
     // imshow("grad_y_bin", grad_y_bin);
     imshow("r_binary", r_binary);
     imshow("s_binary", s_binary);
@@ -296,6 +300,7 @@ Mat ipm(Mat image, int width, int height)
 
 Mat clean_ipm_from_noise(Mat ipm)
 {
+    Mat element;
 
 #if DEBUG
     imshow("ipm with noise", ipm);
@@ -304,7 +309,7 @@ Mat clean_ipm_from_noise(Mat ipm)
 
     // Remove noise
     Mat ipm_noise(ipm.rows, ipm.cols, CV_8UC1, Scalar(0));
-    Mat element = getStructuringElement(MORPH_RECT, Size(14, 14));
+    element = getStructuringElement(MORPH_RECT, Size(14, 14));
     // To close the gap of the noise around the road
     morphologyEx(ipm, ipm_noise, MORPH_CLOSE, element);
 
@@ -333,10 +338,6 @@ Mat clean_ipm_from_noise(Mat ipm)
     // Remove the noise from the original image
     ipm = ipm - ipm_noise;
 
-    // Remove too small segments
-    element = getStructuringElement(MORPH_RECT, Size(args.line_width, args.line_length));
-    morphologyEx(ipm, ipm, MORPH_OPEN, element);
-
 #if DEBUG
     imshow("ipm cleaned", ipm);
     waitKey(0);
@@ -350,7 +351,25 @@ vector<Vec4i> get_all_lines_in_the_image(Mat ipm)
     vector<Vec4i> lines;
     // Each line is a vector of 4 elements, the first two are the start point and the last two are the end point.
     // Rho and theta are the resolution parameters. Each cell for theta is equal to a variation of 3.14/180. Each cell for rho is equal to a variation of 1 pixel.
-    HoughLinesP(ipm, lines, 1, CV_PI / 180, 40, 80, 20);
+    HoughLinesP(ipm, lines, 1, CV_PI / 180, 30, 80, 20);
+
+    vector<Vec4i> lines_filtered;
+    for (int i = 0; i < lines.size(); i++)
+    {
+        int width = lines[i][2] - lines[i][0];
+        if (width != 0)
+        {
+            double slope = abs((lines[i][3] - lines[i][1])) / width;
+            double angle = atan(slope);
+
+            if (angle < angle_threshold)
+            {
+                continue;
+            }
+        }
+        lines_filtered.push_back(lines[i]);
+    }
+    lines = lines_filtered;
 
 #if DEBUG
     Mat all_line_image(ipm.rows, ipm.cols, CV_8UC3, Scalar(0, 0, 0));
@@ -381,14 +400,19 @@ vector<vector<double>> get_four_lanes(vector<Vec4i> lines, int x_scale, int y_sc
     {
         int label_number = labels[i];
 
-        int width = lines[i][2] - lines[i][0];
-        if (width != 0)
-        {
-            double slope = (lines[i][3] - lines[i][1]) / width;
+        // int width = lines[i][2] - lines[i][0];
+        // if (width != 0)
+        // {
+        //     double slope = abs((lines[i][3] - lines[i][1])) / width;
+        //     double angle = atan(slope);
 
-            if (abs(slope) < slope_threshold)
-                continue;
-        }
+        //     cout << "Angle:" << angle << endl;
+        //     if (angle < angle_threshold)
+        //     {
+        //         cout << "Skipped" << endl;
+        //         continue;
+        //     }
+        // }
 
         Vec4i new_points = get_lines_coordinates_from_ipm(lines[i], x_scale, y_scale);
 

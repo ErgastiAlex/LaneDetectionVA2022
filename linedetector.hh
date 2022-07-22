@@ -32,7 +32,7 @@ Mat get_r_binary(Mat image);
 Mat get_s_binary(Mat image);
 Mat get_grad_bin(Mat image, int x_order, int y_order, int min_threshold = 50, int max_threshold = 255);
 Mat get_mag_binary(Mat image, int sobel_kernel = 3, int min_threshold = 50, int max_threshold = 255);
-Mat get_dir_binary(Mat image, int sobel_kernel = 3, double min_threshold = 0.7, double max_threshold = 1.3);
+Mat get_dir_binary(Mat image, int sobel_kernel = 3, double min_threshold = 1, double max_threshold = CV_PI / 2);
 Mat clean_ipm_from_noise(Mat ipm);
 vector<Vec4i> get_all_lines_in_the_image(Mat ipm);
 bool areSameLane(const Vec4i &_l1, const Vec4i &_l2);
