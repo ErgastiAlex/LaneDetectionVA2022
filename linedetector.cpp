@@ -170,13 +170,9 @@ Mat binarization(Mat im_color)
 
     Mat im_bin(im_color.rows, im_color.cols, CV_8UC1, Scalar(0));
 
-    // bitwise_or(r_binary, s_binary, im_bin);
-    // bitwise_or(im_bin, grad_x_bin, im_bin);
-    // bitwise_or(im_bin, grad_y_bin, im_bin);
-    bitwise_and(grad_x_bin, grad_y_bin, im_bin);
-    bitwise_or(grad_x_bin, im_bin, im_bin);
-    bitwise_or(r_binary, im_bin, im_bin);
-    bitwise_or(s_binary, im_bin, im_bin);
+    bitwise_and(mag_binary, dir_binary, im_bin);
+    bitwise_or(im_bin, grad_x_bin, im_bin);
+    bitwise_or(im_bin, s_binary, im_bin);
 #if DEBUG
     imshow("grad_x_bin", grad_x_bin);
     // imshow("grad_y_bin", grad_y_bin);
