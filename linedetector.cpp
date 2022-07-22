@@ -26,8 +26,11 @@ using namespace std;
 
 const string output_path = "output/";
 const string image_path = "../image/color/images-2014-12-22-12-35-10_mapping_280S_ramps/";
+const int ipm_width = 400;
+const int ipm_height = 1000;
 const double scale = 0.25;
 const double line_distance_threshold = 20;
+const double slope_threshold = 0.1;
 const vector<Scalar> lane_colors = {Scalar(0, 0, 255), Scalar(0, 255, 0), Scalar(255, 0, 0), Scalar(255, 255, 0)}; // red, green, blue, yellow
 
 args_t args = {
@@ -94,13 +97,13 @@ void process_image(string image_name, int waitKeyTimer)
     imshow("Image", image);
 
 #if DEBUG
-    Mat image_ipm = ipm(image, 400, 1000);
+    Mat image_ipm = ipm(image, ipm_width, ipm_height);
     imshow("image_ipm", image_ipm);
     waitKey(0);
 #endif
 
     Mat binary_img = binarization(image);
-    Mat img_ipm = ipm(binary_img, 400, 1000);
+    Mat img_ipm = ipm(binary_img, ipm_width, ipm_height);
 
 #if DEBUG
     imshow("IPM", img_ipm);
@@ -159,24 +162,24 @@ bool parse_args(int argc, char **argv)
 Mat binarization(Mat im_color)
 {
     Mat r_binary = get_r_binary(im_color);
-
     Mat s_binary = get_s_binary(im_color);
-
-    Mat im_gray(im_color.rows, im_color.cols, CV_8UC1);
-    cvtColor(im_color, im_gray, COLOR_BGR2GRAY);
-
+    Mat mag_binary = get_mag_binary(im_color);
+    Mat dir_binary = get_dir_binary(im_color);
     Mat grad_x_bin = get_grad_bin(im_color, 1, 0);
     Mat grad_y_bin = get_grad_bin(im_color, 0, 1);
 
     Mat im_bin(im_color.rows, im_color.cols, CV_8UC1, Scalar(0));
 
-    bitwise_or(r_binary, s_binary, im_bin);
-    bitwise_or(im_bin, grad_x_bin, im_bin);
-    bitwise_or(im_bin, grad_y_bin, im_bin);
-
+    // bitwise_or(r_binary, s_binary, im_bin);
+    // bitwise_or(im_bin, grad_x_bin, im_bin);
+    // bitwise_or(im_bin, grad_y_bin, im_bin);
+    bitwise_and(grad_x_bin, grad_y_bin, im_bin);
+    bitwise_or(grad_x_bin, im_bin, im_bin);
+    bitwise_or(r_binary, im_bin, im_bin);
+    bitwise_or(s_binary, im_bin, im_bin);
 #if DEBUG
     imshow("grad_x_bin", grad_x_bin);
-    imshow("grad_y_bin", grad_y_bin);
+    // imshow("grad_y_bin", grad_y_bin);
     imshow("r_binary", r_binary);
     imshow("s_binary", s_binary);
     imshow("im_bin", im_bin);
@@ -203,10 +206,11 @@ Mat get_s_binary(Mat image)
     split(HSV, HSV_channel);
     Mat s_binary(image.rows, image.cols, CV_8UC1, Scalar(0));
     inRange(HSV_channel[1], 100, 255, s_binary);
+
     return s_binary;
 }
 
-Mat get_grad_bin(Mat image, int x_order, int y_order)
+Mat get_grad_bin(Mat image, int x_order, int y_order, int min_threshold, int max_threshold)
 {
     Mat im_gray(image.rows, image.cols, CV_8UC1, Scalar(0));
     cvtColor(image, im_gray, COLOR_BGR2GRAY);
@@ -216,9 +220,48 @@ Mat get_grad_bin(Mat image, int x_order, int y_order)
 
     sobel.convertTo(sobel, CV_8UC1);
     Mat grad_bin(sobel.rows, sobel.cols, CV_8UC1, Scalar(0));
-    inRange(sobel, 30, 100, grad_bin);
+
+    double min, max;
+    minMaxLoc(sobel, &min, &max);
+
+    sobel = sobel / max * 255;
+
+    inRange(sobel, min_threshold, max_threshold, grad_bin);
 
     return grad_bin;
+}
+
+Mat get_mag_binary(Mat image, int sobel_kernel, int min_threshold, int max_threshold)
+{
+    Mat im_gray(image.rows, image.cols, CV_8UC1, Scalar(0));
+    cvtColor(image, im_gray, COLOR_BGR2GRAY);
+    Mat sobel_x(im_gray.rows, im_gray.cols, CV_32FC1);
+    Mat sobel_y(im_gray.rows, im_gray.cols, CV_32FC1);
+    Sobel(im_gray, sobel_x, CV_32FC1, 1, 0, sobel_kernel);
+    Sobel(im_gray, sobel_y, CV_32FC1, 0, 1, sobel_kernel);
+
+    Mat mag(im_gray.rows, im_gray.cols, CV_32FC1);
+    mag = abs(sobel_x) + abs(sobel_y);
+    mag.convertTo(mag, CV_8UC1);
+    inRange(mag, min_threshold, max_threshold, mag);
+    return mag;
+}
+
+Mat get_dir_binary(Mat image, int sobel_kernel, double min_threshold, double max_threshold)
+{
+    Mat im_gray(image.rows, image.cols, CV_8UC1, Scalar(0));
+    cvtColor(image, im_gray, COLOR_BGR2GRAY);
+    Mat sobel_x(im_gray.rows, im_gray.cols, CV_32FC1);
+    Mat sobel_y(im_gray.rows, im_gray.cols, CV_32FC1);
+    Sobel(im_gray, sobel_x, CV_32FC1, 1, 0, sobel_kernel);
+    Sobel(im_gray, sobel_y, CV_32FC1, 0, 1, sobel_kernel);
+
+    Mat dir(im_gray.rows, im_gray.cols, CV_32FC1);
+    phase(sobel_x, sobel_y, dir);
+
+    dir.convertTo(dir, CV_8UC1);
+    inRange(dir, min_threshold, max_threshold, dir);
+    return dir;
 }
 
 Mat ipm(Mat image, int width, int height)
@@ -342,8 +385,14 @@ vector<vector<double>> get_four_lanes(vector<Vec4i> lines, int x_scale, int y_sc
     {
         int label_number = labels[i];
 
-        // Devo mappare la IPM sull'immagine originale così da poter calcolare la posizione dei punti dei vari segmenti.
-        // Devo fare poi la media della X per ogni y tra 300 e 717 per ottenere la posizione della linea.
+        int width = lines[i][2] - lines[i][0];
+        if (width != 0)
+        {
+            double slope = (lines[i][3] - lines[i][1]) / width;
+
+            if (abs(slope) < slope_threshold)
+                continue;
+        }
 
         Vec4i new_points = get_lines_coordinates_from_ipm(lines[i], x_scale, y_scale);
 
@@ -400,7 +449,7 @@ vector<vector<double>> get_four_lanes(vector<Vec4i> lines, int x_scale, int y_sc
 
 #if DEBUG
     // Draw lines with different colors
-    Mat all_line_image(1000, 400, CV_8UC3, Scalar(0, 0, 0));
+    Mat all_line_image(ipm_height, ipm_width, CV_8UC3, Scalar(0, 0, 0));
     for (size_t i = 0; i < lines.size(); i++)
     {
         line(all_line_image, Point(lines[i][0], lines[i][1]),
