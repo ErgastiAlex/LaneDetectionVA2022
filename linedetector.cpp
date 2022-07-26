@@ -27,7 +27,7 @@ using namespace std;
 
 const string output_path = "../output/";
 const string image_path = "../image/color/images-2014-12-22-12-35-10_mapping_280S_ramps/";
-const int ipm_width = 400;
+const int ipm_width = 600;
 const int ipm_height = 1000;
 const double scale = 0.25;
 const double line_distance_threshold = 20;
@@ -97,12 +97,6 @@ void process_image(string image_name, int waitKeyTimer)
         return;
     }
     imshow("Image", image);
-
-#if DEBUG
-    Mat image_ipm = ipm(image, ipm_width, ipm_height);
-    imshow("image_ipm", image_ipm);
-    waitKey(0);
-#endif
 
     Mat binary_img = binarization(image);
     Mat img_ipm = ipm(binary_img, ipm_width, ipm_height);
@@ -590,7 +584,7 @@ vector<vector<double>> filter_lanes_by_position(vector<lane_t> right_lanes, vect
         int lane_index = right_lanes[i].lane_index;
 
         // Add right lane inside the third (r0) and fourth(r1) position
-        filtered_lanes[3 + i] = all_lanes[lane_index];
+        filtered_lanes[2 + i] = all_lanes[lane_index];
     }
 
     int lane_index = -1;
@@ -599,6 +593,7 @@ vector<vector<double>> filter_lanes_by_position(vector<lane_t> right_lanes, vect
         for (int i = 1; i >= 0; i--)
         {
             // If i=1, then get the last element, if i=0 then gest the second last element
+            cout << left_lanes.size() - 2 + i << endl;
             lane_index = left_lanes[left_lanes.size() - 2 + i].lane_index;
             // Add left lane inside the first (l1) and second (l0) position
             filtered_lanes[i] = all_lanes[lane_index];
