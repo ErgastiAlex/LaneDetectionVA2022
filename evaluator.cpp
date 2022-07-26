@@ -4,10 +4,14 @@
 #include <unistd.h>
 #include <queue>
 #include <string>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/core/core.hpp>
 
 #include <fstream> // std::ifstream
 
 using namespace std;
+using namespace cv;
 
 typedef enum
 {
@@ -16,15 +20,20 @@ typedef enum
 } metric_t;
 
 const string label_path = "/media/ergale/SSD/Universita/Parma - Scienze Informatiche/1INF/2SEM/Visione artificiale per il veicolo/LaneDetection/test/labelcpp/valid/images-2014-12-22-12-35-10_mapping_280S_ramps/"; // Path of the ground truth lanes
-const string detected_path = "/media/ergale/SSD/Universita/Parma - Scienze Informatiche/1INF/2SEM/Visione artificiale per il veicolo/LaneDetection/test2/";                                                          // Path of the detected lanes
+// const string detected_path = "/media/ergale/SSD/Universita/Parma - Scienze Informatiche/1INF/2SEM/Visione artificiale per il veicolo/LaneDetection/test2/";                                                          // Path of the detected lanes
+const string detected_path = "/media/ergale/SSD/Universita/Parma - Scienze Informatiche/1INF/2SEM/Visione artificiale per il veicolo/LaneDetection/output/";                                                 // Path of the detected lanes
+const string image_path = "/media/ergale/SSD/Universita/Parma - Scienze Informatiche/1INF/2SEM/Visione artificiale per il veicolo/LaneDetection/image/color/images-2014-12-22-12-35-10_mapping_280S_ramps/"; // Path of the images
+const string image_extension = "_color_rect.png";                                                                                                                                                            // Extension of the images
 string image_name = "";
 metric_t metric;
 int pixel_margin = 50;
+bool show_image = false;
+bool all_images_in_dir = false;
 
 bool parse_inputs(int argc, char **argv)
 {
     int c;
-    while ((c = getopt(argc, argv, "hi:m:p:")) != -1)
+    while ((c = getopt(argc, argv, "hi:m:p:sa")) != -1)
         switch (c)
         {
         case 'i':
@@ -39,6 +48,12 @@ bool parse_inputs(int argc, char **argv)
         case 'p':
             pixel_margin = atoi(optarg);
             break;
+        case 's':
+            show_image = true;
+            break;
+        case 'a':
+            all_images_in_dir = true;
+            break;
         case 'h':
         default:
             std::cout << "usage: " << argv[0] << " -i <image_name> -m <number> -p <number>" << std::endl;
@@ -48,11 +63,13 @@ bool parse_inputs(int argc, char **argv)
                       << "   -h                       produce help message" << std::endl
                       << "   -i arg                   image name." << std::endl
                       << "   -m arg                   [optional] specificy the metrics: 0 (default) for the accuracy, 1 for the pixel distance" << std::endl
-                      << "   -p arg                   [optional] pixel margin (default 15)" << std::endl;
+                      << "   -p arg                   [optional] pixel margin (default 15)"
+                      << "   -s                       [optional] show image"
+                      << "   -a                       [optional] process all images in the directory" << std::endl;
             return false;
         }
 
-    if (image_name == "")
+    if (image_name == "" && !all_images_in_dir)
     {
         std::cout << "The image name must be specified!" << std::endl;
         std::cout << "usage: " << argv[0] << " -i <image_name> -m <number> -p <number>" << std::endl;
@@ -72,7 +89,7 @@ vector<double> get_line_from_file(ifstream &ifs)
     return line;
 }
 
-int get_lanes(string filename, vector<double> &l1, vector<double> &l0, vector<double> &r0, vector<double> &r1)
+int get_lanes(string filename, vector<vector<double>> &lanes)
 {
     ifstream lanes_file(filename, ios_base::in);
 
@@ -82,10 +99,10 @@ int get_lanes(string filename, vector<double> &l1, vector<double> &l0, vector<do
         return -1;
     }
 
-    l1 = get_line_from_file(lanes_file);
-    l0 = get_line_from_file(lanes_file);
-    r0 = get_line_from_file(lanes_file);
-    r1 = get_line_from_file(lanes_file);
+    lanes[0] = get_line_from_file(lanes_file);
+    lanes[1] = get_line_from_file(lanes_file);
+    lanes[2] = get_line_from_file(lanes_file);
+    lanes[3] = get_line_from_file(lanes_file);
     return 0;
 }
 
@@ -100,29 +117,14 @@ double calculate_accuracy(vector<double> line1, vector<double> line2)
     return acc / 417;
 }
 
-int calculate_acc_metric()
+int calculate_acc_metric(vector<vector<double>> detected_lanes, vector<vector<double>> ground_truth_lanes)
 {
     cout << "Calculating accuracy metric..." << endl;
 
-    vector<double> detected_l1, detected_l0, detected_r0, detected_r1;
-    vector<double> gt_l1, gt_l0, gt_r0, gt_r1;
-
-    if (get_lanes(detected_path + image_name, detected_l1, detected_l0, detected_r0, detected_r1) == -1)
-    {
-        std::cout << "The detected lanes file does not exist!" << std::endl;
-        return -1;
-    }
-
-    if (get_lanes(label_path + image_name, gt_l1, gt_l0, gt_r0, gt_r1) == -1)
-    {
-        std::cout << "The ground truth lanes file does not exist!" << std::endl;
-        return -1;
-    }
-
-    double acc_l1 = calculate_accuracy(gt_l1, detected_l1);
-    double acc_l0 = calculate_accuracy(gt_l0, detected_l0);
-    double acc_r0 = calculate_accuracy(gt_r0, detected_r0);
-    double acc_r1 = calculate_accuracy(gt_r1, detected_r1);
+    double acc_l1 = calculate_accuracy(detected_lanes[0], ground_truth_lanes[0]);
+    double acc_l0 = calculate_accuracy(detected_lanes[1], ground_truth_lanes[1]);
+    double acc_r0 = calculate_accuracy(detected_lanes[2], ground_truth_lanes[2]);
+    double acc_r1 = calculate_accuracy(detected_lanes[3], ground_truth_lanes[3]);
 
     cout << "l1 accuracy: " << acc_l1 << "\n"
          << "l0 accuracy: " << acc_l0 << "\n"
@@ -150,29 +152,12 @@ double calculate_distance(vector<double> line1, vector<double> line2)
     return dist / n;
 }
 
-int calculate_dist_metric()
+int calculate_dist_metric(vector<vector<double>> detected_lanes, vector<vector<double>> ground_truth_lanes)
 {
-    std::cout << "Calculating pixel distance metric..." << std::endl;
-
-    vector<double> detected_l1, detected_l0, detected_r0, detected_r1;
-    vector<double> gt_l1, gt_l0, gt_r0, gt_r1;
-
-    if (get_lanes(detected_path + image_name, detected_l1, detected_l0, detected_r0, detected_r1) == -1)
-    {
-        std::cout << "The detected lanes file does not exist!" << std::endl;
-        return -1;
-    }
-
-    if (get_lanes(label_path + image_name, gt_l1, gt_l0, gt_r0, gt_r1) == -1)
-    {
-        std::cout << "The ground truth lanes file does not exist!" << std::endl;
-        return -1;
-    }
-
-    double dist_l1 = calculate_distance(gt_l1, detected_l1);
-    double dist_l0 = calculate_distance(gt_l0, detected_l0);
-    double dist_r0 = calculate_distance(gt_r0, detected_r0);
-    double dist_r1 = calculate_distance(gt_r1, detected_r1);
+    double dist_l1 = calculate_distance(detected_lanes[0], ground_truth_lanes[0]);
+    double dist_l0 = calculate_distance(detected_lanes[1], ground_truth_lanes[1]);
+    double dist_r0 = calculate_distance(detected_lanes[2], ground_truth_lanes[2]);
+    double dist_r1 = calculate_distance(detected_lanes[3], ground_truth_lanes[3]);
 
     cout << "l1 distance: " << dist_l1 << "\n"
          << "l0 distance: " << dist_l0 << "\n"
@@ -183,6 +168,35 @@ int calculate_dist_metric()
     return 0;
 }
 
+void show_images(vector<vector<double>> detected_lanes, vector<vector<double>> ground_truth_lanes)
+{
+    Mat image_detected_lanes = imread(image_path + image_name + image_extension);
+    if (image_detected_lanes.empty())
+    {
+        cout << "Image not found: " << image_path + image_name + image_extension << endl;
+        return;
+    }
+    Mat image_ground_lanes = image_detected_lanes.clone();
+
+    for (int i = 0; i < 4; i++)
+    {
+        for (int j = 0; j < 417; j++)
+        {
+            if (detected_lanes[i][j] != -1)
+            {
+                circle(image_detected_lanes, Point(detected_lanes[i][j], j + 300), 1, Scalar(0, 0, 255), -1);
+            }
+            if (ground_truth_lanes[i][j] != -1)
+            {
+                circle(image_ground_lanes, Point(ground_truth_lanes[i][j], j + 300), 1, Scalar(0, 255, 0), -1);
+            }
+        }
+    }
+    imshow("Detected lanes", image_detected_lanes);
+    imshow("Ground truth lanes", image_ground_lanes);
+    waitKey(0);
+}
+
 int main(int argc, char **argv)
 {
     if (parse_inputs(argc, argv) == false)
@@ -190,13 +204,33 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    vector<vector<double>> detected_lanes(4, vector<double>()); // l1,l0,r0,r1
+    vector<vector<double>> gt_lanes(4, vector<double>());       // l1,l0,r0,r1
+
+    if (get_lanes(detected_path + image_name, detected_lanes) == -1)
+    {
+        std::cout << "The detected lanes file does not exist!" << std::endl;
+        return -1;
+    }
+
+    if (get_lanes(label_path + image_name, gt_lanes) == -1)
+    {
+        std::cout << "The ground truth lanes file does not exist!" << std::endl;
+        return -1;
+    }
+
     if (metric == ACC)
     {
-        calculate_acc_metric();
+        calculate_acc_metric(detected_lanes, gt_lanes);
     }
     else
     {
-        calculate_dist_metric();
+        calculate_dist_metric(detected_lanes, gt_lanes);
+    }
+
+    if (show_image)
+    {
+        show_images(detected_lanes, gt_lanes);
     }
     return 0;
 }
