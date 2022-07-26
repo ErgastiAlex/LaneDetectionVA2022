@@ -120,7 +120,7 @@ void process_image(string image_name, int waitKeyTimer)
     imshow("Image with lines", image);
     waitKey(waitKeyTimer);
 
-    writeOutputFile(image_name, lane_lines);
+    write_output_file(image_name, lane_lines);
 }
 
 bool parse_args(int argc, char **argv)
@@ -633,7 +633,7 @@ void draw_lanes_on_image(Mat image, vector<vector<double>> lanes)
     }
 }
 
-void writeOutputFile(string image_name, vector<vector<double>> lanes)
+void write_output_file(string image_name, vector<vector<double>> lanes)
 {
     ofstream output_file;
     output_file.open(output_path + image_name);

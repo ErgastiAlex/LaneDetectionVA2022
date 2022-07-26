@@ -43,4 +43,4 @@ void add_lanes_to_position_vector(vector<lane_t> &position_vector, double x_coor
 vector<vector<double>> get_four_lanes(vector<Vec4i> lines, int x_scale, int y_scale);
 vector<vector<double>> filter_lanes_by_position(vector<lane_t> right_lanes, vector<lane_t> left_lanes, vector<vector<double>> all_lanes);
 void draw_lanes_on_image(Mat image, vector<vector<double>> lanes);
-void writeOutputFile(string image_name, vector<vector<double>> lanes);
+void write_output_file(string image_name, vector<vector<double>> lanes);
