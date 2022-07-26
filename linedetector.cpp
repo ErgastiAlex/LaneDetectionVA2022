@@ -12,6 +12,7 @@
 #include <queue>
 #include <string>
 #include <float.h>
+#include <fstream>
 
 #include "linedetector.hh"
 
@@ -45,14 +46,12 @@ int main(int argc, char **argv)
     parse_args(argc, argv);
     if (args.process_all_image)
     {
-        VideoWriter outputVideo;
-        outputVideo.open(output_path + "output.avi", -1, 30, Size(ipm_width, ipm_height), true);
         vector<string> image_names = get_all_images_in_dir();
 
         for (int i = 0; i < image_names.size(); i++)
         {
             cout << image_names[i] << endl;
-            process_image(image_names[i], 1, outputVideo);
+            process_image(image_names[i], 1);
         }
     }
     else
@@ -87,7 +86,7 @@ vector<string> get_all_images_in_dir()
     return image_names;
 }
 
-void process_image(string image_name, int waitKeyTimer, VideoWriter outputVideo)
+void process_image(string image_name, int waitKeyTimer)
 {
     Mat image = imread(image_path + image_name + "_color_rect.png");
     blur(image, image, Size(5, 5));
@@ -118,13 +117,10 @@ void process_image(string image_name, int waitKeyTimer, VideoWriter outputVideo)
     vector<vector<double>> lane_lines = get_four_lanes(lines, img_ipm.cols / 2, img_ipm.rows);
     draw_lanes_on_image(image, lane_lines);
 
-    if (outputVideo.isOpened())
-    {
-        outputVideo.write(image);
-    }
-
     imshow("Image with lines", image);
     waitKey(waitKeyTimer);
+
+    writeOutputFile(image_name, lane_lines);
 }
 
 bool parse_args(int argc, char **argv)
@@ -184,9 +180,8 @@ Mat binarization(Mat im_color)
     bitwise_or(im_bin, s_binary, im_bin);
 #if DEBUG
     imshow("grad_x_bin", grad_x_bin);
-
+    imshow("grad_y_bin", grad_y_bin);
     imshow("dir_binary", dir_binary);
-    // imshow("grad_y_bin", grad_y_bin);
     imshow("r_binary", r_binary);
     imshow("s_binary", s_binary);
     imshow("im_bin", im_bin);
@@ -316,7 +311,7 @@ Mat clean_ipm_from_noise(Mat ipm)
 
     // Remove noise
     Mat ipm_noise(ipm.rows, ipm.cols, CV_8UC1, Scalar(0));
-    element = getStructuringElement(MORPH_RECT, Size(14, 14));
+    element = getStructuringElement(MORPH_RECT, Size(30, 30));
     // To close the gap of the noise around the road
     morphologyEx(ipm, ipm_noise, MORPH_CLOSE, element);
 
@@ -334,7 +329,6 @@ Mat clean_ipm_from_noise(Mat ipm)
 #endif
 
     // Expaned the noise
-    element = getStructuringElement(MORPH_RECT, Size(30, 30));
     dilate(ipm_noise, ipm_noise, element);
 
 #if DEBUG
@@ -358,7 +352,7 @@ vector<Vec4i> get_all_lines_in_the_image(Mat ipm)
     vector<Vec4i> lines;
     // Each line is a vector of 4 elements, the first two are the start point and the last two are the end point.
     // Rho and theta are the resolution parameters. Each cell for theta is equal to a variation of 3.14/180. Each cell for rho is equal to a variation of 1 pixel.
-    HoughLinesP(ipm, lines, 1, CV_PI / 180, 30, 80, 20);
+    HoughLinesP(ipm, lines, 1, CV_PI / 180, 30, 60, 10);
 
     vector<Vec4i> lines_filtered;
     for (int i = 0; i < lines.size(); i++)
@@ -402,68 +396,47 @@ vector<vector<double>> get_four_lanes(vector<Vec4i> lines, int x_scale, int y_sc
     vector<vector<double>> all_lanes(numberOfLines, vector<double>(417, 0)); // pixel from 300 to 717
     vector<vector<int>> counter(numberOfLines, vector<int>(417, 0));
 
+    vector<int> lanes_x_coordinate_in_ipm(numberOfLines, 0);
+    vector<int> lanes_x_coordinate_counter(numberOfLines, 0);
+
     // Calculate the lane lines in the original image
     for (int i = 0; i < lines.size(); i++)
     {
         int label_number = labels[i];
 
-        // int width = lines[i][2] - lines[i][0];
-        // if (width != 0)
-        // {
-        //     double slope = abs((lines[i][3] - lines[i][1])) / width;
-        //     double angle = atan(slope);
-
-        //     cout << "Angle:" << angle << endl;
-        //     if (angle < angle_threshold)
-        //     {
-        //         cout << "Skipped" << endl;
-        //         continue;
-        //     }
-        // }
-
         Vec4i new_points = get_lines_coordinates_from_ipm(lines[i], x_scale, y_scale);
 
-        calc_line_points(new_points, all_lanes[label_number], counter[label_number]);
+        bool is_line_used = calc_line_points(new_points, all_lanes[label_number], counter[label_number]);
+        if (is_line_used)
+        {
+            lanes_x_coordinate_in_ipm[label_number] += (lines[i][0] + lines[i][2]) / 2;
+            lanes_x_coordinate_counter[label_number]++;
+        }
     }
 
-    vector<lane_t> right_lanes; // Ordered as r2,r1,r0
-    vector<lane_t> left_lanes;  // Ordered as l0, l1, l2
+    vector<lane_t> right_lanes; // Ordered as r0,r1,r2
+    vector<lane_t> left_lanes;  // Ordered as l2,l1,l0
 
     // Group all lanes of the same type together
     for (int i = 0; i < numberOfLines; i++)
     {
-        point_t start = {-1, -1};
-        point_t end = {-1, -1};
-
         for (int j = 0; j < 417; j++)
         {
             if (counter[i][j] > 0)
             {
                 all_lanes[i][j] /= counter[i][j];
-                end.x = all_lanes[i][j];
-                end.y = j;
-
-                if (start.x == -1) // This is setted only once
-                {
-                    start.x = all_lanes[i][j];
-                    start.y = j;
-                }
             }
         }
 
-        double slope = DBL_MAX;
-        if (end.x != start.x)
+        double x_coordinate = lanes_x_coordinate_in_ipm[i] / lanes_x_coordinate_counter[i];
+
+        if (x_coordinate > ipm_width / 2)
         {
-            slope = (end.y - start.y) / (end.x - start.x);
-        }
-        // If the slope is positive, then is a right lane
-        if (slope < 0)
-        {
-            add_lanes_to_position_vector(left_lanes, slope, i);
+            add_lanes_to_position_vector(right_lanes, x_coordinate, i);
         }
         else
         {
-            add_lanes_to_position_vector(right_lanes, slope, i);
+            add_lanes_to_position_vector(left_lanes, x_coordinate, i);
         }
     }
 
@@ -472,7 +445,7 @@ vector<vector<double>> get_four_lanes(vector<Vec4i> lines, int x_scale, int y_sc
     cout << "left_lanes.size()=" << left_lanes.size() << endl;
 #endif
 
-    vector<vector<double>> filtered_lanes = filter_lanes_by_slope(right_lanes, left_lanes, all_lanes);
+    vector<vector<double>> filtered_lanes = filter_lanes_by_position(right_lanes, left_lanes, all_lanes);
 
 #if DEBUG
     // Draw lines with different colors
@@ -539,7 +512,7 @@ Vec4i get_lines_coordinates_from_ipm(Vec4i lines, int x_scale, int y_scale)
     return new_points;
 }
 
-void calc_line_points(Vec4i points, vector<double> &lanes, vector<int> &counter)
+bool calc_line_points(Vec4i points, vector<double> &lanes, vector<int> &counter)
 {
     // This point is the nearest from the camera
     point_t start = {(double)points[0], (double)points[1]};
@@ -563,11 +536,11 @@ void calc_line_points(Vec4i points, vector<double> &lanes, vector<int> &counter)
 
     if (start.x == end.x || start.y == end.y)
     { // Vertical line or horizontal line
-        return;
+        return false;
     }
     if (end.y - start.y <= 2)
     { // Line too short
-        return;
+        return false;
     }
 
     double height = end.y - start.y;
@@ -588,59 +561,57 @@ void calc_line_points(Vec4i points, vector<double> &lanes, vector<int> &counter)
         lanes[y - 300] += x;
         counter[y - 300]++;
     }
+    return true;
 }
 
-void add_lanes_to_position_vector(vector<lane_t> &position_vector, double slope, int lane_index)
+void add_lanes_to_position_vector(vector<lane_t> &position_vector, double x_coordinate, int lane_index)
 {
     for (size_t i = 0; i < position_vector.size(); i++)
     {
         // Insert the lane in order. The lanes are sorted by their slope
-        if (position_vector[i].slope >= slope)
+        if (position_vector[i].x_coordinate >= x_coordinate)
         {
-            position_vector.insert(position_vector.begin() + i, {slope, lane_index});
+            position_vector.insert(position_vector.begin() + i, {x_coordinate, lane_index});
             return;
         }
     }
-    position_vector.push_back({slope, lane_index});
+    position_vector.push_back({x_coordinate, lane_index});
 }
 
-vector<vector<double>> filter_lanes_by_slope(vector<lane_t> right_lanes, vector<lane_t> left_lanes, vector<vector<double>> all_lanes)
+vector<vector<double>> filter_lanes_by_position(vector<lane_t> right_lanes, vector<lane_t> left_lanes, vector<vector<double>> all_lanes)
 {
     vector<vector<double>> filtered_lanes(4, vector<double>(417, -1)); // l1, l0, r0, r1
     // If the lane is the closest right lane to the car, then the slope is a big positive number.
     // Distant right lanes have a smaller positive slope compared to the closer one.
+
     for (int i = 0; i < right_lanes.size() && i < 2; i++)
     {
-        // The r1 lane is the second last lane of the left lanes, if i=0, then we select the second last lane.
-        // if i=1 we select the last lane.
+        // right_lanes= r0,r1,r2
+        int lane_index = right_lanes[i].lane_index;
 
-        int lane_index;
-        if (right_lanes.size() >= 2)
-        {
-            lane_index = right_lanes[right_lanes.size() - 2 + i].lane_index;
-        }
-        else
-        {
-            // To solve the problem of having just one right lane
-            lane_index = right_lanes[right_lanes.size() - 1].lane_index;
-        }
         // Add right lane inside the third (r0) and fourth(r1) position
-        filtered_lanes[3 - i] = all_lanes[lane_index];
-
-#if DEBUG
-        cout << "Slope of r" << i << ": " << right_lanes[right_lanes.size() - 2 + i].slope << endl;
-#endif
+        filtered_lanes[3 + i] = all_lanes[lane_index];
     }
 
-    // If the lane is the closest left lane to the car, then the slope is a big negative number.
-    // Distant left lanes have a smaller negative slope compared to the closer one.
-    for (int i = 0; i < left_lanes.size() && i < 2; i++)
+    int lane_index = -1;
+    if (left_lanes.size() >= 2) // We have l2,l1,l0
     {
-        int lane_index = left_lanes[i].lane_index;
-
-        // Add left lane inside the first (l1) and second (l0) position
-        filtered_lanes[1 - i] = all_lanes[lane_index];
+        for (int i = 1; i >= 0; i--)
+        {
+            // If i=1, then get the last element, if i=0 then gest the second last element
+            lane_index = left_lanes[left_lanes.size() - 2 + i].lane_index;
+            // Add left lane inside the first (l1) and second (l0) position
+            filtered_lanes[i] = all_lanes[lane_index];
+        }
     }
+    else
+    {
+        // To solve the problem of having just one left lane (l0)
+        lane_index = left_lanes[left_lanes.size() - 1].lane_index;
+        // Add only l0
+        filtered_lanes[1] = all_lanes[lane_index];
+    }
+
     return filtered_lanes;
 }
 
@@ -660,4 +631,25 @@ void draw_lanes_on_image(Mat image, vector<vector<double>> lanes)
             circle(image, Point(x, y + 300), 1, lane_colors[i], 4, 8, 0);
         }
     }
+}
+
+void writeOutputFile(string image_name, vector<vector<double>> lanes)
+{
+    ofstream output_file;
+    output_file.open(output_path + image_name);
+    for (int i = 0; i < lanes.size(); i++)
+    {
+        for (int y = 0; y < lanes[i].size(); y++)
+        {
+            if (lanes[i][y] == 0)
+            {
+                output_file << "-1"
+                            << " ";
+                continue;
+            }
+            output_file << lanes[i][y] << " ";
+        }
+        output_file << endl;
+    }
+    output_file.close();
 }

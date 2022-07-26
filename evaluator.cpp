@@ -15,7 +15,7 @@ typedef enum
     DIST = 1
 } metric_t;
 
-const string label_path = "/media/ergale/SSD/Universita/Parma - Scienze Informatiche/1INF/2SEM/Visione artificiale per il veicolo/LaneDetection/test/labelcpp/valid/images-2014-12-22-12-35-10_mapping_280S_ramps/"; // Path of the ground truth laness
+const string label_path = "/media/ergale/SSD/Universita/Parma - Scienze Informatiche/1INF/2SEM/Visione artificiale per il veicolo/LaneDetection/test/labelcpp/valid/images-2014-12-22-12-35-10_mapping_280S_ramps/"; // Path of the ground truth lanes
 const string detected_path = "/media/ergale/SSD/Universita/Parma - Scienze Informatiche/1INF/2SEM/Visione artificiale per il veicolo/LaneDetection/test2/";                                                          // Path of the detected lanes
 string image_name = "";
 metric_t metric;
