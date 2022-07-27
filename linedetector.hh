@@ -8,6 +8,8 @@ typedef struct
     int line_length;
     int line_width;
     string image_name;
+    bool show_image;
+    bool save_image;
 } args_t;
 
 typedef struct

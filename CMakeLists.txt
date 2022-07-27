@@ -20,3 +20,4 @@ target_include_directories(linedetector PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR})
 
 #--- Evaluator executable ---
 add_executable(evaluator evaluator.cpp)
+target_link_libraries(evaluator ${OpenCV_LIBS} )

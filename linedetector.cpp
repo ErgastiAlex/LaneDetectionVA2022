@@ -25,25 +25,34 @@ using namespace std;
 [0, 0, 1]]
 */
 
+const string output_path_for_image = "/home/ergale/Desktop/image/";
 const string output_path = "../output/";
 const string image_path = "../image/color/images-2014-12-22-12-35-10_mapping_280S_ramps/";
 const int ipm_width = 600;
-const int ipm_height = 1000;
+const int ipm_height = 1200;
 const double scale = 0.25;
 const double line_distance_threshold = 20;
 const double angle_threshold = 87.0 / 180.0 * CV_PI;                                                               // Only vertical line
-const vector<Scalar> lane_colors = {Scalar(0, 0, 255), Scalar(0, 255, 0), Scalar(255, 0, 0), Scalar(255, 255, 0)}; // red, green, blue, yellow
+const vector<Scalar> lane_colors = {Scalar(0, 0, 255), Scalar(0, 255, 0), Scalar(255, 0, 0), Scalar(0, 255, 255)}; // red, green, blue, yellow
 
 args_t args = {
     .process_all_image = false,
     .line_length = 4,
     .line_width = 1,
     .image_name = "",
+    .show_image = true,
+    .save_image = false,
 };
 
 int main(int argc, char **argv)
 {
-    parse_args(argc, argv);
+    bool ok = parse_args(argc, argv);
+
+    if (ok == false)
+    {
+        return -1;
+    }
+
     if (args.process_all_image)
     {
         vector<string> image_names = get_all_images_in_dir();
@@ -88,6 +97,8 @@ vector<string> get_all_images_in_dir()
 
 void process_image(string image_name, int waitKeyTimer)
 {
+    Mat image_without_blur = imread(image_path + image_name + "_color_rect.png");
+
     Mat image = imread(image_path + image_name + "_color_rect.png");
     blur(image, image, Size(5, 5));
 
@@ -96,7 +107,11 @@ void process_image(string image_name, int waitKeyTimer)
         cout << "image not found" << endl;
         return;
     }
-    imshow("Image", image);
+
+    if (args.show_image)
+    {
+        imshow("image", image_without_blur);
+    }
 
     Mat binary_img = binarization(image);
     Mat img_ipm = ipm(binary_img, ipm_width, ipm_height);
@@ -109,18 +124,25 @@ void process_image(string image_name, int waitKeyTimer)
     img_ipm = clean_ipm_from_noise(img_ipm);
     vector<Vec4i> lines = get_all_lines_in_the_image(img_ipm);
     vector<vector<double>> lane_lines = get_four_lanes(lines, img_ipm.cols / 2, img_ipm.rows);
-    draw_lanes_on_image(image, lane_lines);
+    draw_lanes_on_image(image_without_blur, lane_lines);
 
-    imshow("Image with lines", image);
-    waitKey(waitKeyTimer);
-
+    if (args.show_image)
+    {
+        imshow("image with lines", image_without_blur);
+        waitKey(waitKeyTimer);
+    }
     write_output_file(image_name, lane_lines);
+
+    if (args.save_image)
+    {
+        imwrite(output_path_for_image + image_name + "_with_lines.png", image_without_blur);
+    }
 }
 
 bool parse_args(int argc, char **argv)
 {
     int c;
-    while ((c = getopt(argc, argv, "hi:w:e:a")) != -1)
+    while ((c = getopt(argc, argv, "hi:w:e:as:o")) != -1)
         switch (c)
         {
         case 'i':
@@ -134,6 +156,19 @@ bool parse_args(int argc, char **argv)
         case 'a':
             args.process_all_image = true;
             break;
+        case 's':
+            if (atoi(optarg) == 1)
+            {
+                args.show_image = true;
+            }
+            else
+            {
+                args.show_image = false;
+            }
+            break;
+        case 'o':
+            args.save_image = true;
+            break;
         case 'h':
         default:
             std::cout << "usage: " << argv[0] << " -i <image_name> -w <line-width> -e <line-height>" << std::endl;
@@ -144,7 +179,9 @@ bool parse_args(int argc, char **argv)
                       << "   -i arg                   image name." << std::endl
                       << "   -w arg                   [optional] specify the line width" << std::endl
                       << "   -e arg                   [optional] specify the line height" << std::endl
-                      << "   -a                       [optional] process all images in the directory" << std::endl;
+                      << "   -a                       [optional] process all images in the directory" << std::endl
+                      << "   -s arg                   [optional] show image" << std::endl
+                      << "   -o                       [optional] save image" << std::endl;
             return false;
         }
 
@@ -305,7 +342,7 @@ Mat clean_ipm_from_noise(Mat ipm)
 
     // Remove noise
     Mat ipm_noise(ipm.rows, ipm.cols, CV_8UC1, Scalar(0));
-    element = getStructuringElement(MORPH_RECT, Size(30, 30));
+    element = getStructuringElement(MORPH_RECT, Size(28, 28));
     // To close the gap of the noise around the road
     morphologyEx(ipm, ipm_noise, MORPH_CLOSE, element);
 
@@ -422,15 +459,18 @@ vector<vector<double>> get_four_lanes(vector<Vec4i> lines, int x_scale, int y_sc
             }
         }
 
-        double x_coordinate = lanes_x_coordinate_in_ipm[i] / lanes_x_coordinate_counter[i];
+        if (lanes_x_coordinate_counter[i] > 0)
+        {
+            double x_coordinate = lanes_x_coordinate_in_ipm[i] / lanes_x_coordinate_counter[i];
 
-        if (x_coordinate > ipm_width / 2)
-        {
-            add_lanes_to_position_vector(right_lanes, x_coordinate, i);
-        }
-        else
-        {
-            add_lanes_to_position_vector(left_lanes, x_coordinate, i);
+            if (x_coordinate > ipm_width / 2)
+            {
+                add_lanes_to_position_vector(right_lanes, x_coordinate, i);
+            }
+            else
+            {
+                add_lanes_to_position_vector(left_lanes, x_coordinate, i);
+            }
         }
     }
 
@@ -462,9 +502,6 @@ bool areSameLane(const Vec4i &_l1, const Vec4i &_l2)
 
     point_t start_l1 = {(double)_l2[0], (double)_l2[1]};
     point_t end_l1 = {(double)_l2[2], (double)_l2[3]};
-
-    double slope_l0 = (end_l0.y - start_l0.y) / (end_l0.x - start_l0.x);
-    double slope_l1 = (end_l1.y - start_l1.y) / (end_l1.x - start_l1.x);
 
     if (abs(end_l0.x - end_l1.x) < line_distance_threshold && abs(start_l0.x - start_l1.x) < line_distance_threshold)
     {
@@ -593,13 +630,12 @@ vector<vector<double>> filter_lanes_by_position(vector<lane_t> right_lanes, vect
         for (int i = 1; i >= 0; i--)
         {
             // If i=1, then get the last element, if i=0 then gest the second last element
-            cout << left_lanes.size() - 2 + i << endl;
             lane_index = left_lanes[left_lanes.size() - 2 + i].lane_index;
             // Add left lane inside the first (l1) and second (l0) position
             filtered_lanes[i] = all_lanes[lane_index];
         }
     }
-    else
+    else if (left_lanes.size() == 1)
     {
         // To solve the problem of having just one left lane (l0)
         lane_index = left_lanes[left_lanes.size() - 1].lane_index;
