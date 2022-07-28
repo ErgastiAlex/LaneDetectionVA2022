@@ -47,7 +47,10 @@ def parse_argv(argv):
         sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('test.py -i <inputdir> -o <outputdir> -f')
+            print('-i arg       Specify the input directory of the json files')
+            print('-o arg       Specify the output directory of the processed files')
+            print(
+                '-f           If set, the line is drawn as a full line, ignoring the dashed lines')
             sys.exit()
         elif opt in ("-i", "--inputdir"):
             input_path = arg
